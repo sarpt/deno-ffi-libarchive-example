@@ -7,13 +7,15 @@ if (!archivePath) {
 }
 
 const la = new LibArchive();
-const { errMsg } = la.open(archivePath);
-if (errMsg) {
-  console.error(`error opening archive - ${errMsg}`);
+
+const paths = la.listFiles(archivePath);
+paths.forEach(path => console.log(path));
+
+const extractResult = la.extractFiles(archivePath)
+if (extractResult.errMsg) {
+  console.error(`error extracting archive - ${extractResult.errMsg}`);
   Deno.exit(1);
 }
-const paths = la.listFiles();
 
-paths.forEach(path => console.log(path));
 la.close();
 Deno.exit(0);
