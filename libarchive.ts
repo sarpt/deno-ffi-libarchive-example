@@ -1,3 +1,5 @@
+import * as path from "https://deno.land/std@0.125.0/path/mod.ts";
+
 const defaultLibarchivePath = '/usr/lib/libarchive.so'; // ldconfig aliases path; TODO: either parse ld.so.cache or use ldconfig -p to find this
 
 const symbols = {
@@ -128,6 +130,13 @@ const symbols = {
     ] as Deno.NativeType[],
     result: 'usize' as Deno.NativeType // size
   },
+  archive_entry_set_pathname: {
+    parameters: [
+      'pointer', // struct archive_entry *
+      'pointer', // c-string path
+    ] as Deno.NativeType[],
+    result: 'void' as Deno.NativeType
+  },
 };
 
 enum ARCHIVE_RESULTS {
@@ -197,7 +206,7 @@ export class LibArchive {
     return paths;
   }
 
-  extractFiles(archivePath: string): { errMsg?: string } {
+  extractFiles(archivePath: string, outPath: string): { errMsg?: string } {
     const archive = this.open(archivePath);
     if (!archive) return { errMsg: 'archive has not been opened' };
 
@@ -227,13 +236,19 @@ export class LibArchive {
       if (r < ARCHIVE_RESULTS.WARN)
         return { errMsg: 'warn returned' };
 
-      r = this.lib.symbols.archive_write_header(ext, new Deno.UnsafePointer(archive_entry_pointer[0])) as number;
+      const archiveEntry = new Deno.UnsafePointer(archive_entry_pointer[0]);
+
+      const pathname = new Deno.UnsafePointerView(this.lib.symbols.archive_entry_pathname(archiveEntry) as Deno.UnsafePointer).getCString();
+      const targetPathname = path.join(outPath, pathname);
+      this.lib.symbols.archive_entry_set_pathname(archiveEntry, makeCString(targetPathname));
+
+      r = this.lib.symbols.archive_write_header(ext, archiveEntry) as number;
       if (r < ARCHIVE_RESULTS.OK)
         console.error(
           new Deno.UnsafePointerView(this.lib.symbols.archive_error_string(ext) as Deno.UnsafePointer)
             .getCString()
         );
-      else if (this.lib.symbols.archive_entry_size(new Deno.UnsafePointer(archive_entry_pointer[0])) as number > 0) {
+      else if (this.lib.symbols.archive_entry_size(archiveEntry) as number > 0) {
         r = this.copyData(archive, ext);
 
         if (r < ARCHIVE_RESULTS.OK)
